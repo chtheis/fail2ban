@@ -276,8 +276,10 @@ class Actions(JailThread, Mapping):
 					exc_info=logSys.getEffectiveLevel()<=logging.DEBUG)
 		while self.active:
 			if self.idle:
+				logSys.debug("Actions: enter idle mode")
 				Utils.wait_for(lambda: not self.active or not self.idle,
-					self.sleeptime * 10, self.sleeptime)
+					lambda: False, self.sleeptime)
+				logSys.debug("Actions: leave idle mode")
 				continue
 			if not Utils.wait_for(lambda: not self.active or self.__checkBan(), self.sleeptime):
 				self.__checkUnBan()
@@ -287,6 +289,8 @@ class Actions(JailThread, Mapping):
 		return True
 
 	class ActionInfo(CallingMap):
+
+		CM_REPR_ITEMS = ("fid", "raw-ticket")
 
 		AI_DICT = {
 			"ip":				lambda self: self.__ticket.getIP(),
@@ -305,7 +309,9 @@ class Actions(JailThread, Mapping):
 			"ipmatches":			lambda self: "\n".join(self._mi4ip(True).getMatches()),
 			"ipjailmatches":	lambda self: "\n".join(self._mi4ip().getMatches()),
 			"ipfailures":			lambda self: self._mi4ip(True).getAttempt(),
-			"ipjailfailures":	lambda self: self._mi4ip().getAttempt()
+			"ipjailfailures":	lambda self: self._mi4ip().getAttempt(),
+			# raw ticket info:
+			"raw-ticket":			lambda self: repr(self.__ticket)
 		}
 
 		__slots__ = CallingMap.__slots__ + ('__ticket', '__jail', '__mi4ip')
@@ -317,7 +323,7 @@ class Actions(JailThread, Mapping):
 			self.immutable = immutable
 			self.data = data
 		
-		def copy(self): # pargma: no cover
+		def copy(self): # pragma: no cover
 			return self.__class__(self.__ticket, self.__jail, self.immutable, self.data.copy())
 
 		def _mi4ip(self, overalljails=False):
@@ -413,7 +419,7 @@ class Actions(JailThread, Mapping):
 					diftm = ticket.getTime() - bTicket.getTime()
 					# log already banned with following level:
 					#   DEBUG   - before 3 seconds - certain interval for it, because of possible latency by recognizing in backends, etc.
-					#   NOTICE  - before 60 seconds - may still occurre if action are slow, or very high load in backend,
+					#   NOTICE  - before 60 seconds - may still occur if action is slow, or very high load in backend,
 					#   WARNING - after 60 seconds - very long time, something may be wrong
 					ll = logging.DEBUG   if diftm < 3 \
 					else logging.NOTICE  if diftm < 60 \
@@ -448,7 +454,7 @@ class Actions(JailThread, Mapping):
 		"""
 		log = True
 		if actions is None:
-			logSys.debug("Flush ban list")
+			logSys.debug("  Flush ban list")
 			lst = self.__banManager.flushBanList()
 		else:
 			log = False # don't log "[jail] Unban ..." if removing actions only.
@@ -463,16 +469,16 @@ class Actions(JailThread, Mapping):
 			else:
 				unbactions[name] = action
 		actions = unbactions
+		# flush the database also:
+		if db and self._jail.database is not None:
+			logSys.debug("  Flush jail in database")
+			self._jail.database.delBan(self._jail)
 		# unban each ticket with non-flasheable actions:
 		for ticket in lst:
-			# delete ip from database also:
-			if db and self._jail.database is not None:
-				ip = str(ticket.getIP())
-				self._jail.database.delBan(self._jail, ip)
 			# unban ip:
 			self.__unBan(ticket, actions=actions, log=log)
 			cnt += 1
-		logSys.debug("Unbanned %s, %s ticket(s) in %r", 
+		logSys.debug("  Unbanned %s, %s ticket(s) in %r", 
 			cnt, self.__banManager.size(), self._jail.name)
 		return cnt
 
